@@ -1,0 +1,14 @@
+# Runs inside the YouTrack container's network namespace (network_mode: service:youtrack).
+# Lets YouTrack reach GitLab through GitLab's *public* URL (http://localhost:${GITLAB_HTTP_PORT}),
+# so the commit / merge request links YouTrack stores are clickable in the browser.
+# Not needed when GITLAB_EXTERNAL_URL is a real DNS name.
+server {
+    listen 127.0.0.1:${GITLAB_HTTP_PORT};
+    resolver 127.0.0.11 valid=30s;
+    set $gitlab_upstream http://gitlab:${GITLAB_HTTP_PORT};
+    client_max_body_size 0;
+    location / {
+        proxy_pass $gitlab_upstream;
+        proxy_set_header Host $http_host;
+    }
+}

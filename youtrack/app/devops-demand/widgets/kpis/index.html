@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<style>
+  :root { --fg:#1f2329; --muted:#6b7280; --line:#e5e7eb; --tile:#f6f8fb; --accent:#2f6fdb;
+          --red:#d93025; --amber:#e8a400; --green:#188038; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e6e6e6; --muted:#9aa0a6; --line:#3c4043; --tile:#2a2d31; }
+  }
+  body { margin:0; padding:8px 12px; font:13px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif; color:var(--fg); background:transparent; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+  .tile { background:var(--tile); border-radius:6px; padding:8px 10px; text-decoration:none; color:inherit; display:block; }
+  .tile .v { font-size:24px; font-weight:600; }
+  .tile .l { color:var(--muted); font-size:12px; }
+  .tile.red .v { color:var(--red); } .tile.amber .v { color:var(--amber); }
+  h4 { margin:14px 0 6px; font-size:13px; }
+  .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+  .bar { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  .bar .n { width:78px; color:var(--muted); }
+  .bar .b { height:12px; background:var(--accent); border-radius:2px; }
+  .bar .b.old { background:var(--amber); } .bar .b.vold { background:var(--red); }
+  table { border-collapse:collapse; width:100%; }
+  td, th { text-align:left; padding:3px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:normal; }
+  a { color:var(--accent); }
+  .muted { color:var(--muted); }
+  .intake { margin:0 0 8px; }
+  .err { color:var(--red); }
+</style>
+</head>
+<body>
+<div id="root" class="muted">Loading DevOps demand KPIs...</div>
+<script>
+(function () {
+  var PROJECT = 'DEVOPS';
+  var THRESHOLD = 14; // display only; the workflow app setting drives the 'aging' tag
+  var DAY = 86400000;
+  var FIELDS = 'idReadable,summary,created,tags(name),customFields(name,value(name,login,fullName))';
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function field(issue, name) {
+    var f = (issue.customFields || []).filter(function (x) { return x.name === name; })[0];
+    if (!f || f.value == null) return null;
+    if (typeof f.value === 'object') return f.value.name || f.value.fullName || f.value.login;
+    return f.value;
+  }
+  function since(issue) { return field(issue, 'Requested On') || issue.created; }
+  function search(q) { return '/issues?q=' + encodeURIComponent(q); }
+  function tile(label, value, q, cls) {
+    return '<a class="tile ' + (cls || '') + '" href="' + search(q) + '"><div class="v">' + value +
+      '</div><div class="l">' + esc(label) + '</div></a>';
+  }
+
+  function render(open) {
+    var now = Date.now();
+    var by = function (pred) { return open.filter(pred).length; };
+    var state = function (s) { return function (i) { return field(i, 'State') === s; }; };
+    var ages = open.map(function (i) { return (now - since(i)) / DAY; });
+    var avg = ages.length ? ages.reduce(function (a, b) { return a + b; }, 0) / ages.length : 0;
+    var p12 = by(function (i) { var p = field(i, 'Priority') || ''; return p.indexOf('P1') === 0 || p.indexOf('P2') === 0; });
+    var aging = by(function (i) { return (i.tags || []).some(function (t) { return t.name === 'aging'; }); });
+    var p = 'project: ' + PROJECT + ' #Unresolved ';
+
+    var nl = function (t, label) { return '<a href="/newIssue?project=' + PROJECT + '&c=' + encodeURIComponent('Type ' + t) + '">' + label + '</a>'; };
+    var html = '<div class="intake"><b>Need DevOps help?</b> ' + nl('Demand', 'New demand') + ' &middot; ' +
+      nl('Bug', 'Report a bug') + ' &middot; ' + nl('Improvement', 'Suggest an improvement') + ' &middot; ' +
+      '<a href="' + search('project: ' + PROJECT + ' reporter: me sort by: updated desc') + '">My requests</a></div>' +
+      '<div class="tiles">' +
+      tile('Open requests', open.length, p) +
+      tile('New / Triage', by(state('New')) + by(state('Triage')), p + 'State: New, Triage') +
+      tile('Accepted', by(state('Accepted')), p + 'State: Accepted') +
+      tile('In Progress', by(state('In Progress')), p + 'State: {In Progress}') +
+      tile('Blocked', by(state('Blocked')), p + 'State: Blocked', by(state('Blocked')) ? 'red' : '') +
+      tile('P1 / P2 open', p12, p + 'Priority: {P1 Critical}, {P2 High}', p12 ? 'red' : '') +
+      tile('Avg age (days)', avg.toFixed(1), p + 'sort by: {Requested On} asc', avg > THRESHOLD ? 'amber' : '') +
+      tile('Aging (tagged)', aging, p + 'tag: aging', aging ? 'amber' : '') +
+      '</div>';
+
+    // Aging distribution
+    var buckets = [['0-7 d', 0, 7], ['8-14 d', 7, 14], ['15-30 d', 14, 30], ['31-60 d', 30, 60], ['60+ d', 60, 1e9]];
+    var counts = buckets.map(function (b, k) {
+      return ages.filter(function (a) { return a <= b[2] && (k === 0 || a > b[1]); }).length; });
+    var max = Math.max.apply(null, counts.concat([1]));
+    var dist = buckets.map(function (b, k) {
+      var cls = b[1] >= 30 ? 'vold' : (b[1] >= 14 ? 'old' : '');
+      return '<div class="bar"><span class="n">' + b[0] + '</span><span class="b ' + cls + '" style="width:' +
+        Math.round(counts[k] / max * 180) + 'px"></span><span>' + counts[k] + '</span></div>';
+    }).join('');
+
+    // Blocked requests with blocked age
+    var blocked = open.filter(state('Blocked')).sort(function (a, b) {
+      return (field(a, 'Blocked Since') || now) - (field(b, 'Blocked Since') || now); });
+    var btable = blocked.length ? '<table><tr><th>Request</th><th>Squad</th><th>Blocked</th><th>Reason</th></tr>' +
+      blocked.map(function (i) {
+        var since = field(i, 'Blocked Since');
+        return '<tr><td><a href="/issue/' + i.idReadable + '">' + i.idReadable + '</a></td><td>' +
+          esc(field(i, 'Requester Squad')) + '</td><td>' + (since ? ((now - since) / DAY).toFixed(1) + ' d' : '?') +
+          '</td><td>' + esc(field(i, 'Blocked Reason')) + '</td></tr>';
+      }).join('') + '</table>' : '<div class="muted">Nothing is blocked.</div>';
+
+    // Oldest open requests
+    var oldest = open.slice().sort(function (a, b) { return since(a) - since(b); }).slice(0, 5);
+    var otable = '<table><tr><th>Request</th><th>Squad</th><th>Age</th><th>State</th></tr>' +
+      oldest.map(function (i) {
+        return '<tr><td><a href="/issue/' + i.idReadable + '" title="' + esc(i.summary) + '">' + i.idReadable +
+          '</a></td><td>' + esc(field(i, 'Requester Squad')) + '</td><td>' + Math.floor((now - since(i)) / DAY) +
+          ' d</td><td>' + esc(field(i, 'State')) + '</td></tr>';
+      }).join('') + '</table>';
+
+    html += '<div class="cols"><div><h4>Aging distribution (open requests)</h4>' + dist +
+      '</div><div><h4>Oldest open requests</h4>' + otable + '</div></div>' +
+      '<h4>Blocked requests and blocked age (' + blocked.length + ')</h4>' + btable;
+    document.getElementById('root').innerHTML = html;
+    document.getElementById('root').className = '';
+  }
+
+  async function load(host) {
+    try {
+      var open = await host.fetchYouTrack('issues?query=' + encodeURIComponent('project: ' + PROJECT + ' #Unresolved') +
+        '&fields=' + FIELDS + '&$top=5000');
+      render(open);
+    } catch (e) {
+      document.getElementById('root').innerHTML = '<span class="err">Failed to load: ' + esc(e && e.message || e) + '</span>';
+    }
+  }
+
+  (async function () {
+    var host;
+    host = await YTApp.register({ onRefresh: function () { load(host); } });
+    load(host);
+  })();
+})();
+</script>
+</body>
+</html>

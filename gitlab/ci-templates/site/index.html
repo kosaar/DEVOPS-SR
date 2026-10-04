@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Platform CI templates</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 16px;color:#1f2329}
+code{background:#f3f4f6;padding:1px 4px;border-radius:3px}.meta{color:#6b7280;font-size:13px}
+li{margin:6px 0}</style></head>
+<body>
+<h1>Platform CI templates</h1>
+<p>Reusable pipeline building blocks maintained by the DevOps team.
+Need a new one? <a href="__YOUTRACK_URL__/newIssue?project=DEVOPS&c=Type%20Demand">Request it in YouTrack</a>.</p>
+<h2>Catalog</h2>
+<ul id="catalog">
+__CATALOG__
+</ul>
+<p class="meta">Deployed by pipeline <a href="__PIPELINE_URL__">#__PIPELINE_ID__</a> from commit
+<code>__COMMIT__</code> (__REF__) at __DEPLOYED_AT__.<br>Linked requests: __REQUESTS__</p>
+</body>
+</html>

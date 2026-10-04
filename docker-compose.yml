@@ -1,0 +1,185 @@
+# DevOps Demand Management POC
+#   YouTrack Server (demand system) + GitLab CE (engineering / CI/CD) + GitLab Runner
+#   + Mailpit (SMTP sink for workflow notifications) + demo-app (deployment target)
+#
+# Everything runs on one Docker host, no cloud dependency.
+# Usage: see README.md  (./scripts/up.sh && ./scripts/setup.sh)
+
+name: devops-poc
+
+x-logging: &default-logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+
+  youtrack:
+    image: jetbrains/youtrack:${YOUTRACK_VERSION}
+    container_name: devops-poc-youtrack
+    restart: unless-stopped
+    # Configure-then-run in one container start (documented entrypoint option):
+    #  - skip the interactive Configuration Wizard on a clean install
+    #  - set the externally visible base URL
+    command:
+      - --allow.configure.and.run
+      - -J-Ddisable.configuration.wizard.on.clean.install=true
+      - -J-Xmx${YOUTRACK_HEAP:-2g}
+      - --base-url=${YOUTRACK_BASE_URL}
+    ports:
+      - "${YOUTRACK_PORT}:8080"
+    volumes:
+      - youtrack-data:/opt/youtrack/data
+      - youtrack-conf:/opt/youtrack/conf
+      - youtrack-logs:/opt/youtrack/logs
+      - youtrack-backups:/opt/youtrack/backups
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/api/config?fields=version"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 60s
+    networks: [poc]
+    logging: *default-logging
+
+  # Loopback helper sharing YouTrack's network namespace: makes GitLab's public URL
+  # (http://localhost:<GITLAB_HTTP_PORT>) reachable from YouTrack. See deploy/loopback/.
+  youtrack-loopback:
+    image: nginx:${NGINX_VERSION}
+    container_name: devops-poc-youtrack-loopback
+    restart: unless-stopped
+    network_mode: "service:youtrack"
+    depends_on: [youtrack]
+    environment:
+      GITLAB_HTTP_PORT: ${GITLAB_HTTP_PORT}
+    volumes:
+      - ./deploy/loopback/youtrack-to-gitlab.conf.template:/etc/nginx/templates/default.conf.template:ro
+    logging: *default-logging
+
+  gitlab:
+    image: gitlab/gitlab-ce:${GITLAB_VERSION}
+    container_name: devops-poc-gitlab
+    hostname: gitlab
+    restart: unless-stopped
+    shm_size: 256m
+    environment:
+      GITLAB_ROOT_PASSWORD: ${GITLAB_ROOT_PASSWORD}
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url '${GITLAB_EXTERNAL_URL}'
+        gitlab_rails['initial_root_password'] = '${GITLAB_ROOT_PASSWORD}'
+        gitlab_rails['gitlab_shell_ssh_port'] = ${GITLAB_SSH_PORT}
+        gitlab_rails['time_zone'] = 'UTC'
+        # The bundled PostgreSQL + Redis are used (supported, single-node install).
+        # POC sizing: keep the footprint small.
+        puma['worker_processes'] = 2
+        sidekiq['concurrency'] = 10
+        prometheus_monitoring['enable'] = false
+        gitlab_kas['enable'] = false
+        registry['enable'] = false
+        gitlab_pages['enable'] = false
+        gitlab_rails['usage_ping_enabled'] = false
+        gitlab_rails['backup_keep_time'] = 604800
+        # YouTrack registers its GitLab webhook with its *public* base URL (default
+        # http://localhost:<YOUTRACK_PORT>). Make that URL work from inside this container
+        # with a loopback proxy in GitLab's bundled nginx (Puma moved off 8080 to free the port).
+        # Not needed when YOUTRACK_BASE_URL is a real DNS name.
+        puma['port'] = 8075
+        nginx['custom_nginx_config'] = "server { listen 127.0.0.1:${YOUTRACK_PORT}; resolver 127.0.0.11 valid=30s; set $$yt http://youtrack:8080; location / { proxy_pass $$yt; proxy_set_header Host $$http_host; } }"
+    ports:
+      - "${GITLAB_HTTP_PORT}:${GITLAB_HTTP_PORT}"
+      - "${GITLAB_SSH_PORT}:22"
+    volumes:
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+    healthcheck:
+      # readiness = Rails, DB, Redis and Gitaly all answering (localhost is allow-listed)
+      test: ["CMD-SHELL", "curl -fsS -m 10 http://localhost:${GITLAB_HTTP_PORT}/-/readiness?all=1 | grep -q '\"status\":\"ok\"'"]
+      interval: 30s
+      timeout: 20s
+      retries: 40
+      start_period: 180s
+    networks:
+      poc:
+        aliases: [gitlab]
+    logging: *default-logging
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:${GITLAB_RUNNER_VERSION}
+    container_name: devops-poc-gitlab-runner
+    restart: unless-stopped
+    # config.toml is written by the setup job (scripts/setup.sh) into the shared volume;
+    # the runner hot-reloads it.
+    volumes:
+      - gitlab-runner-config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      gitlab:
+        condition: service_healthy
+    networks: [poc]
+    logging: *default-logging
+
+  mailpit:
+    image: axllent/mailpit:${MAILPIT_VERSION}
+    container_name: devops-poc-mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_UI_PORT}:8025"
+    volumes:
+      - mailpit-data:/data
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 5000
+    networks: [poc]
+    logging: *default-logging
+
+  # Deployment target for the demo CI/CD pipeline: the GitLab "deploy" job publishes
+  # the built site into this volume; nginx serves it. Stands in for a real environment.
+  demo-app:
+    image: nginx:${NGINX_VERSION}
+    container_name: devops-poc-demo-app
+    restart: unless-stopped
+    ports:
+      - "${DEMO_APP_PORT}:80"
+    volumes:
+      - demo-app-www:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [poc]
+    logging: *default-logging
+
+  # One-shot configuration job (Python stdlib only). Talks to YouTrack and GitLab
+  # exclusively through their REST APIs. Not started by `up`; run via scripts/setup.sh.
+  setup:
+    image: python:${PYTHON_VERSION}
+    profiles: ["tools"]
+    working_dir: /work
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      YOUTRACK_INTERNAL_URL: http://youtrack:8080
+      GITLAB_INTERNAL_URL: http://gitlab:${GITLAB_HTTP_PORT}
+    volumes:
+      - ./:/work
+      - gitlab-runner-config:/runner-config
+    entrypoint: ["python", "-m", "setup.ytsetup"]
+    networks: [poc]
+
+networks:
+  poc:
+    name: devops-poc        # fixed name: CI job containers join it (runner network_mode)
+
+volumes:
+  youtrack-data:
+  youtrack-conf:
+  youtrack-logs:
+  youtrack-backups:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  gitlab-runner-config:
+  mailpit-data:
+  demo-app-www:
+    name: devops-poc-demo-app-www   # fixed name: mounted into the CI deploy job

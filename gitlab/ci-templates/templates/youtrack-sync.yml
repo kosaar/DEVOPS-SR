@@ -1,0 +1,6 @@
+# Report pipeline results to the YouTrack request referenced in the branch / MR title / commit.
+# Needs group CI/CD variables YOUTRACK_URL and YOUTRACK_TOKEN.
+.youtrack-sync:
+  image: alpine:3.20
+  script:
+    - sh scripts/youtrack-sync.sh

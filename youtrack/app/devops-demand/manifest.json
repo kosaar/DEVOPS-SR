@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/youtrack-app.json",
+  "name": "devops-demand",
+  "title": "DevOps Demand Management",
+  "description": "Lightweight request workflow for the DEVOPS project: request forms (description templates), intake to Triage, P1/P2 escalation to the DevOps lead, Blocked/Done guards, aging flags, and a KPI dashboard widget.",
+  "version": "1.0.0",
+  "minYouTrackVersion": "2024.3.0",
+  "vendor": {
+    "name": "Platform DevOps Team",
+    "url": "https://example.internal/devops"
+  },
+  "icon": "icon.svg",
+  "settings": "settings.json",
+  "widgets": [
+    {
+      "key": "devops-demand-kpis",
+      "name": "DevOps Demand KPIs",
+      "description": "Open demand, triage/in-progress/blocked counts, P1/P2, average age, aging distribution and blocked age for the DEVOPS project.",
+      "extensionPoint": "DASHBOARD_WIDGET",
+      "indexPath": "widgets/kpis/index.html",
+      "iconPath": "widgets/kpis/icon.svg",
+      "defaultDimensions": { "width": "4fr", "height": "2fr" }
+    }
+  ]
+}

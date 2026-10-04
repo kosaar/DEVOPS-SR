@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "DevOps Demand Management settings",
+  "description": "Tunables for the DEVOPS request workflow. Change them in Administration > Apps > DevOps Demand Management > Settings.",
+  "properties": {
+    "agingThresholdDays": {
+      "title": "Aging threshold (days)",
+      "description": "Unresolved requests older than this get the 'aging' tag.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 14
+    },
+    "devopsLeadLogin": {
+      "title": "DevOps lead login",
+      "description": "Login of the user notified when a P1/P2 request is created or escalated.",
+      "type": "string",
+      "default": "devops.lead"
+    }
+  }
+}
