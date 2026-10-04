@@ -1,0 +1,51 @@
+# Output of ./scripts/setup.sh verify after reset.sh + setup.sh (clean install) and a backup/restore drill
+
+PASS  Model      Project DEVOPS with all required fields           15 fields; missing: none
+PASS  Workflow   Workflow app installed                            10 modules: aging-refresh, aging-schedule, blocked-enter, blocked-leave, common, done-guard, mark-blocked, priority-escalation, request-intake, request-templates
+PASS  Demo data  >= 50 requests                                    59 requests
+PASS  Demo data  requests from all 10 squads                       Payments=10, Customer Portal=7, Mobile=6, Data=7, CRM=4, Analytics=5, Security=5, Internal Tools=4, Commerce=6, Operations=5
+PASS  Demo data  demands                                           30
+PASS  Demo data  bugs                                              15
+PASS  Demo data  improvements                                      14
+PASS  Demo data  open P1/P2                                        14
+PASS  Demo data  blocked with reason                               5
+PASS  Demo data  aging (tag)                                       22
+PASS  Demo data  completed in last 30 days                         16
+PASS  Developer  submit request -> lands in Triage                 DEVOPS-64 -> Triage in 1.1s (deleted again)
+PASS  Developer  incomplete request rejected with a clear message  A Bug needs the affected Environment.
+PASS  Developer  requester can see her requests' status            maria sees 10 own requests with their State
+PASS  Developer  requester cannot change workflow state            HTTP 400 (DevOps Requester role)
+PASS  DevOps     Blocked requires Blocked Reason                   Fill in "Blocked Reason" before moving the request to Blocked (or use the "Mark as blocked" action, which asks
+PASS  DevOps     Done requires GitLab reference                    Before closing, link the implementation: set "GitLab Issue/MR reference" (e.g. platform/ci-templates!12), or a
+PASS  DevOps     Kanban board with 5 columns, valid                Triage -> Accepted -> In Progress -> Blocked -> Done
+PASS  DevOps     P1/P2 notify the DevOps lead                      20 P1/P2 escalation e-mails to the DevOps lead in Mailpit (sent ~1 min after the change)
+PASS  Management dashboard exists                                  'DevOps Demand - Management' with 12 widgets
+PASS  Management squad/service/priority/aging reports calculated   8/8 reports calculated
+PASS  GitLab     CI runner online                                  1 online instance runner(s)
+PASS  Lifecycle  request Done with GitLab MR + pipeline refs       http://localhost:8080/issue/DEVOPS-59 Done platform/ci-templates!1
+PASS  Lifecycle  CI wrote back to YouTrack (bot comments)          2 gitlab.bot comments
+PASS  Lifecycle  YouTrack GitLab integration attached commits      2 VCS changes on the request
+PASS  Lifecycle  deployed version served by demo-app               demo-app serves edc8a8e6
+
+# .state/lifecycle.json (end-to-end lifecycle demo)
+{
+  "request": "http://localhost:8080/issue/DEVOPS-59",
+  "state": "Done",
+  "assignee": "Lee CI/CD",
+  "GitLab Project": "platform/ci-templates",
+  "GitLab Issue/MR reference": "platform/ci-templates!1",
+  "Pipeline reference": "http://localhost:8929/platform/ci-templates/-/pipelines/3",
+  "gitlab_issue": "http://localhost:8929/platform/ci-templates/-/issues/1 (closed)",
+  "merge_request": "http://localhost:8929/platform/ci-templates/-/merge_requests/1",
+  "main_pipeline": "http://localhost:8929/platform/ci-templates/-/pipelines/3",
+  "deployed_version": "edc8a8e6",
+  "comments": [
+    "maria.payments: Escalation: P2 High request, DevOps lead @devops.lead has been notified.",
+    "devops.lead: Accepted in triage: good fit for the shared CI templates. @lee.cicd please take it.",
+    "lee.cicd: Implementation tracked in GitLab: [platform/ci-templates#1](http://localhost:8929/platform",
+    "gitlab.bot: GitLab pipeline [#2](http://localhost:8929/platform/ci-templates/-/pipelines/2) passed (te",
+    "gitlab.bot: Deployed to **demo** (http://localhost:8088) by pipeline [#3](http://localhost:8929/platfo",
+    "lee.cicd: Delivered: template `smoke-test` is available in the catalog (http://localhost:8088). MR ["
+  ],
+  "vcs_changes_attached_by_youtrack": 2
+}

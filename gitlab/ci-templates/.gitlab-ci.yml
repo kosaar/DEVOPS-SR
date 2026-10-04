@@ -1,0 +1,69 @@
+# Pipeline for the CI template catalog.
+#   MR pipelines : test -> build -> youtrack (report back to the DevOps request)
+#   main         : test -> build -> deploy (demo environment) -> smoke -> youtrack
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+default:
+  image: alpine:3.20
+
+stages: [test, build, deploy, verify, report]
+
+template-checks:
+  stage: test
+  script:
+    - sh tests/test.sh
+
+build-site:
+  stage: build
+  script:
+    - sh scripts/build-site.sh
+  artifacts:
+    paths: [public/]
+    expire_in: 1 week
+
+deploy-demo:
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment:
+    name: demo
+    url: $DEMO_APP_PUBLIC_URL
+  script:
+    # /deploy-target is the web root of the demo-app container (volume mounted by the runner)
+    - cp -r public/. /deploy-target/
+    - echo "Deployed $(cat public/version.txt) to the demo environment"
+
+smoke-test:
+  stage: verify
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment:
+    name: demo
+    url: $DEMO_APP_PUBLIC_URL
+    action: verify
+  script:
+    - for i in 1 2 3 4 5; do v=$(wget -q -O - http://demo-app/version.txt || true); [ "$v" = "$CI_COMMIT_SHORT_SHA" ] && break; sleep 2; done
+    - test "$v" = "$CI_COMMIT_SHORT_SHA" || { echo "demo-app serves '$v', expected $CI_COMMIT_SHORT_SHA"; exit 1; }
+    - wget -q -O - http://demo-app/ | grep -q "Platform CI templates"
+    - echo "Smoke test passed - demo-app serves $v"
+
+youtrack-sync:
+  stage: report
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - sh scripts/youtrack-sync.sh pipeline
+
+youtrack-deployed:
+  stage: report
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment:
+    name: demo
+    url: $DEMO_APP_PUBLIC_URL
+    action: access
+  script:
+    - sh scripts/youtrack-sync.sh deployed

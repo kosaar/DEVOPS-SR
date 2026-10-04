@@ -1,0 +1,7 @@
+# Lint, test, build and scan a Node.js service.
+.node-service:
+  image: node:22-alpine
+  script:
+    - npm ci
+    - npm run lint
+    - npm test
